@@ -150,18 +150,21 @@ func (j *Job) UpdateWorkflow(ctx context.Context, repo *github.Repository) (resu
 	printer.Info("Found %d files in .github/workflows", len(contents))
 
 	var filesToCreate = make(map[string]struct{})
+	for filePath := range j.filesToUpdate {
+		filesToCreate[filePath] = struct{}{}
+	}
 	for _, content := range contents {
 		printer.Info("Processing file '%s'", content.GetName())
 		// Check if the current file is one of the files to update
 		if newContent, found := j.filesToUpdate[content.GetName()]; found {
+			delete(filesToCreate, content.GetName())
+			fmt.Println("filesToCreate updated", filesToCreate)
+
 			var updateResult resultAction
 			updateResult, err = j.createBranchAndDo(ctx, repo.GetName(), content.GetPath(), newContent, updateAction)
 			if err != nil {
 				err = fmt.Errorf("unable to update '%s': %v", content.GetName(), err)
 				return
-			}
-			if updateResult.Skipped() {
-				filesToCreate[content.GetName()] = struct{}{}
 			}
 			result.add(updateResult)
 		} else {
@@ -195,7 +198,6 @@ func (j *Job) UpdateWorkflow(ctx context.Context, repo *github.Repository) (resu
 
 func (j *Job) finalizePR(ctx context.Context, err error, result resultAction, repo *github.Repository) error {
 	printer := pretty.NewScopePrinter("-")
-	printer.Info("Result: '%d'", result)
 	switch {
 	case j.branchCreated && !result.Changed():
 		_, delErr := client.Git.DeleteRef(ctx, j.User, repo.GetName(), "refs/heads/"+j.PRBranchName)
@@ -298,6 +300,7 @@ func (j *Job) createBranchAndDo(ctx context.Context, repo, filePath string, cont
 		if string(content) == oldContent {
 			printer.Info("Content is the same. Skipping update.")
 			result.add(resultSkipped)
+			fmt.Println("resultSkipped", result)
 			return
 		}
 	}

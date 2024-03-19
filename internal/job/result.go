@@ -5,8 +5,8 @@ type resultAction byte
 const resultNoAction resultAction = 0
 
 const (
-	resultUpdated resultAction = 1 << iota
-	resultSkipped
+	resultSkipped resultAction = 1 << iota
+	resultUpdated
 	resultDeleted
 	resultCreated
 )
@@ -28,7 +28,7 @@ func (a resultAction) Created() bool {
 }
 
 func (a resultAction) Changed() bool {
-	return a != resultNoAction
+	return a > resultSkipped
 }
 
 func (a *resultAction) add(result resultAction) {
