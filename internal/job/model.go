@@ -79,7 +79,7 @@ func (j *Job) FetchAllGoRepos(ctx context.Context, repoJob func(context.Context,
 		ListOptions: github.ListOptions{PerPage: 30},
 	}
 
-MainLoop:
+	//MainLoop:
 	for {
 		repos, resp, err := client.Repositories.ListByUser(ctx, j.User, opt)
 		if err != nil {
@@ -115,10 +115,10 @@ MainLoop:
 				return err
 			}
 
-			if repo.GetName() == "ccase" {
-				scopePrinter.Info("Limit of 3 Pull Requests reached. Stopping.")
-				break MainLoop
-			}
+			//if j.counter >= 3{
+			//	scopePrinter.Info("Limit of 3 Pull Requests reached. Stopping.")
+			//	break MainLoop
+			//}
 		}
 
 		if resp.NextPage == 0 {
