@@ -81,11 +81,11 @@ func (j *Job) FetchAllGoRepos(ctx context.Context, repoJob func(context.Context,
 
 	//MainLoop:
 	for {
-		repos, resp, err := client.Repositories.ListByUser(ctx, j.User, opt)
+		repos, listRepos, err := client.Repositories.ListByUser(ctx, j.User, opt)
 		if err != nil {
 			return fmt.Errorf("Error listing repositories: %v\n", err)
 		}
-		scopePrinter.Info("Remaining Quota: %d", resp.Rate.Remaining)
+		scopePrinter.Info("Remaining Quota: %d", listRepos.Rate.Remaining)
 
 		for _, repo := range repos {
 			scopePrinter.Info("Processing repository '%s'", repo.GetName())
@@ -98,6 +98,7 @@ func (j *Job) FetchAllGoRepos(ctx context.Context, repoJob func(context.Context,
 			}
 
 			// Check for go.mod file in the repository's root
+			var resp *github.Response
 			_, _, resp, err = client.Repositories.GetContents(ctx, j.User, repo.GetName(), "go.mod", &github.RepositoryContentGetOptions{})
 			if err != nil {
 				if resp != nil && resp.StatusCode == 404 {
@@ -121,10 +122,10 @@ func (j *Job) FetchAllGoRepos(ctx context.Context, repoJob func(context.Context,
 			//}
 		}
 
-		if resp.NextPage == 0 {
+		if listRepos.NextPage == 0 {
 			break
 		}
-		opt.Page = resp.NextPage
+		opt.Page = listRepos.NextPage
 	}
 
 	return nil
@@ -158,7 +159,6 @@ func (j *Job) UpdateWorkflow(ctx context.Context, repo *github.Repository) (resu
 		// Check if the current file is one of the files to update
 		if newContent, found := j.filesToUpdate[content.GetName()]; found {
 			delete(filesToCreate, content.GetName())
-			fmt.Println("filesToCreate updated", filesToCreate)
 
 			var updateResult resultAction
 			updateResult, err = j.createBranchAndDo(ctx, repo.GetName(), content.GetPath(), newContent, updateAction)
@@ -218,13 +218,15 @@ func (j *Job) finalizePR(ctx context.Context, err error, result resultAction, re
 			Body:                github.String("This PR updates workflow files."),
 			MaintainerCanModify: github.Bool(true),
 		}
-		_, _, err = client.PullRequests.Create(ctx, j.User, repo.GetName(), pr)
+		var prResponse *github.PullRequest
+		prResponse, _, err = client.PullRequests.Create(ctx, j.User, repo.GetName(), pr)
 		if err != nil {
 			return fmt.Errorf("error creating pull request: %v", err)
 		}
 
+		// print the PR URL
+		printer.Info("Pull request created: %s", prResponse.GetHTMLURL())
 		j.counter++
-		printer.OK("Pull request created.")
 	}
 
 	return err
@@ -300,7 +302,6 @@ func (j *Job) createBranchAndDo(ctx context.Context, repo, filePath string, cont
 		if string(content) == oldContent {
 			printer.Info("Content is the same. Skipping update.")
 			result.add(resultSkipped)
-			fmt.Println("resultSkipped", result)
 			return
 		}
 	}
