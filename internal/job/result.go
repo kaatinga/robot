@@ -11,6 +11,33 @@ const (
 	resultCreated
 )
 
+func (a resultAction) PrintAll() []string {
+	var output []string
+	for i := resultUpdated; i <= resultCreated; i <<= 1 {
+		if result := a & i; result != 0 {
+			output = append(output, result.String())
+		}
+	}
+	return output
+}
+
+func (a resultAction) String() string {
+	switch a {
+	case resultSkipped:
+		return "Skipped"
+	case resultUpdated:
+		return "Updated"
+	case resultDeleted:
+		return "Deleted"
+	case resultCreated:
+		return "Created"
+	case resultNoAction:
+		return "No action"
+	default:
+		return "Mixed action"
+	}
+}
+
 func (a resultAction) Updated() bool {
 	return a&resultUpdated != 0
 }

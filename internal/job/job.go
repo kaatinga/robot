@@ -306,6 +306,10 @@ func (j *Job) createBranchAndDo(ctx context.Context, repo, filePath string, cont
 		err = fmt.Errorf("unknown action: %v", action)
 	}
 
+	for _, r := range result.PrintAll() {
+		printer.OK(r)
+	}
+
 	return
 }
 
@@ -338,8 +342,6 @@ func (j *Job) createBranch(ctx context.Context, repo string) error {
 }
 
 func (j *Job) updateFile(ctx context.Context, repo string, filePath string, content []byte, file *github.RepositoryContent, oldContent string) (result resultAction, err error) {
-	printer := pretty.NewScopePrinter("-----")
-
 	updateOpts := &github.RepositoryContentFileOptions{
 		Message: github.String(fmt.Sprintf("Update %s", filePath)),
 		Content: content,
@@ -379,8 +381,6 @@ func (j *Job) updateFile(ctx context.Context, repo string, filePath string, cont
 }
 
 func (j *Job) deleteFile(ctx context.Context, repo string, filePath string, file *github.RepositoryContent) error {
-	printer := pretty.NewScopePrinter("-----")
-
 	opts := &github.RepositoryContentFileOptions{
 		Message: github.String(fmt.Sprintf("Delete %s", filePath)),
 		SHA:     file.SHA,
@@ -392,12 +392,10 @@ func (j *Job) deleteFile(ctx context.Context, repo string, filePath string, file
 		return fmt.Errorf("error deleting file: %v", err)
 	}
 
-	printer.OK("File deleted")
 	return nil
 }
 
 func (j *Job) createFile(ctx context.Context, repo string, filePath string, content []byte) error {
-	printer := pretty.NewScopePrinter("-----")
 	opts := &github.RepositoryContentFileOptions{
 		Message: github.String(fmt.Sprintf("Create %s", filePath)),
 		Content: content,
@@ -409,6 +407,5 @@ func (j *Job) createFile(ctx context.Context, repo string, filePath string, cont
 		return fmt.Errorf("error creating file: %v", err)
 	}
 
-	printer.OK("File created")
 	return nil
 }
