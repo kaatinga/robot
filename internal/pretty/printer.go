@@ -29,13 +29,17 @@ func (s *ScopePrinter) printMessage(message, status, statusColor string, argumen
 }
 
 func (s *ScopePrinter) OK(message string, arguments ...any) {
-	s.printMessage(message, " OK    ", color.Green, arguments...)
+	s.printMessage(message, " OK      ", color.Green, arguments...)
+}
+
+func (s *ScopePrinter) Skipped(message string, arguments ...any) {
+	s.printMessage(message, " Skipped ", color.Yellow, arguments...)
 }
 
 func (s *ScopePrinter) Info(message string, arguments ...any) {
-	s.printMessage(message, " Info  ", color.Blue, arguments...)
+	s.printMessage(message, " Info    ", color.Blue, arguments...)
 }
 
 func (s *ScopePrinter) Error(message string, arguments ...any) {
-	s.printMessage(message, " Error ", color.Red, arguments...)
+	s.printMessage(message, " Error   ", color.Red, arguments...)
 }

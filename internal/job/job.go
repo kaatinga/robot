@@ -27,12 +27,12 @@ type Job struct {
 
 func (j *Job) skipRepo(ctx context.Context, repo *github.Repository, loopPrinter pretty.ScopePrinter) bool {
 	if repo.GetFork() {
-		loopPrinter.Info("Skipping forked repository '%s'", repo.GetName())
+		loopPrinter.Skipped("Fork")
 		return true
 	}
 
 	if repo.GetArchived() {
-		loopPrinter.Info("Skipping archived repository '%s'", repo.GetName())
+		loopPrinter.Skipped("Archived")
 		return true
 	}
 
@@ -40,7 +40,7 @@ func (j *Job) skipRepo(ctx context.Context, repo *github.Repository, loopPrinter
 	_, _, resp, err := client.Repositories.GetContents(ctx, j.User, repo.GetName(), "go.mod", &github.RepositoryContentGetOptions{})
 	if err != nil {
 		if resp != nil && resp.StatusCode == 404 {
-			loopPrinter.Info("Repository is not a Golang package/project")
+			loopPrinter.Skipped("Repository is not a Golang package/project")
 		} else {
 			loopPrinter.Error("Error getting contents: %v", err)
 		}
@@ -106,7 +106,12 @@ func (j *Job) FetchAllGoRepos(ctx context.Context, repoJob func(context.Context,
 		if err != nil {
 			return fmt.Errorf("Error listing repositories: %v\n", err)
 		}
-		scopePrinter.Info("Remaining Quota: %d", listRepos.Rate.Remaining)
+		if listRepos.Rate.Remaining < 300 {
+			scopePrinter.Info("Rate limit reached. Remaining Quota: %d", listRepos.Rate.Remaining)
+			break
+		} else {
+			scopePrinter.Info("Remaining Quota: %d", listRepos.Rate.Remaining)
+		}
 
 		for _, repo := range repos {
 			scopePrinter.Info("Processing repository '%s'", repo.GetName())
@@ -142,7 +147,7 @@ func (j *Job) UpdateWorkflow(ctx context.Context, repo *github.Repository) (resu
 	if err != nil {
 		var errorResponse *github.ErrorResponse
 		if errors.As(err, &errorResponse) && errorResponse.Response.StatusCode == 404 {
-			printer.Info("No .github/workflows directory found. Skipping.")
+			printer.Skipped("No .github/workflows directory found.")
 			err = nil
 		} else {
 			err = fmt.Errorf("Error getting contents: %v\n", err)
@@ -171,13 +176,14 @@ func (j *Job) UpdateWorkflow(ctx context.Context, repo *github.Repository) (resu
 			result.add(updateResult)
 		} else {
 			// Delete the file since it's not one of the files to keep
-			_, err = j.createBranchAndDo(ctx, repo.GetName(), content.GetPath(), nil, deleteAction)
+			var deleteResult resultAction
+			deleteResult, err = j.createBranchAndDo(ctx, repo.GetName(), content.GetPath(), nil, deleteAction)
 			if err != nil {
 				err = fmt.Errorf("unable to delete '%s': %v", content.GetName(), err)
 				return
 			}
 
-			result.add(resultDeleted)
+			result.add(deleteResult)
 		}
 	}
 
@@ -186,13 +192,14 @@ func (j *Job) UpdateWorkflow(ctx context.Context, repo *github.Repository) (resu
 			continue
 		}
 
-		_, err = j.createBranchAndDo(ctx, repo.GetName(), ".github/workflows/"+filePath, fileContent, createAction)
+		var createResult resultAction
+		createResult, err = j.createBranchAndDo(ctx, repo.GetName(), ".github/workflows/"+filePath, fileContent, createAction)
 		if err != nil {
 			err = fmt.Errorf("unable to create '%s': %v", filePath, err)
 			return
 		}
 
-		result.add(resultCreated)
+		result.add(createResult)
 	}
 
 	return
@@ -201,7 +208,7 @@ func (j *Job) UpdateWorkflow(ctx context.Context, repo *github.Repository) (resu
 func (j *Job) finalizePR(ctx context.Context, err error, result resultAction, repo *github.Repository) error {
 	printer := pretty.NewScopePrinter("-")
 	switch {
-	case err != nil || j.branchCreated && !result.Changed():
+	case err != nil || (j.branchCreated && !result.Changed()):
 		_, delErr := client.Git.DeleteRef(ctx, j.User, repo.GetName(), "refs/heads/"+j.PRBranchName)
 		if delErr != nil {
 			if err != nil {
@@ -268,7 +275,7 @@ func (j *Job) createBranchAndDo(ctx context.Context, repo, filePath string, cont
 		}
 
 		if string(content) == oldContent {
-			printer.Info("Content is the same. Skipping update.")
+			printer.Skipped("Content is the same.")
 			result.add(resultSkipped)
 			return
 		}
@@ -281,8 +288,6 @@ func (j *Job) createBranchAndDo(ctx context.Context, repo, filePath string, cont
 
 		printer.OK("Branch '%s' created", j.PRBranchName)
 		j.branchCreated = true
-	} else {
-		printer.Info("Branch '%s' already exists", j.PRBranchName)
 	}
 
 	// Step 4: Perform the action
@@ -367,7 +372,6 @@ func (j *Job) updateFile(ctx context.Context, repo string, filePath string, cont
 
 	// Check if the Updated content matches the expected content
 	if decodedContent != oldContent {
-		printer.OK("File Updated")
 		result.add(resultUpdated)
 	}
 
