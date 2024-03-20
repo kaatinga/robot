@@ -22,7 +22,7 @@ func main() {
 
 	jobBranch := "robot-works-" + time.Now().Format(branchSafeTimeFormat)
 	printer := pretty.NewScopePrinter("")
-	j, err := job.NewJob("kaatinga", jobBranch)
+	j, err := job.NewJob("kaatinga", jobBranch, true)
 	if err != nil {
 		printer.Error("Failure: %v", err)
 		os.Exit(1)

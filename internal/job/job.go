@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/google/go-github/v60/github"
 	"github.com/kaatinga/robot/internal/pretty"
@@ -15,6 +16,7 @@ type Job struct {
 	User         string
 	PRBranchName string
 	baseBranch   string
+	toMerge      bool
 
 	// repo related fields
 	branchCreated bool
@@ -59,7 +61,7 @@ func (j *Job) next() {
 	j.baseBranch = "main"
 }
 
-func NewJob(user, prBranchName string) (*Job, error) {
+func NewJob(user, prBranchName string, toMerge bool) (*Job, error) {
 	filesToUpdate, err := loadTemplates()
 	if err != nil {
 		return nil, fmt.Errorf("Error loading templates: %v\n", err)
@@ -84,6 +86,7 @@ func NewJob(user, prBranchName string) (*Job, error) {
 		filesToUpdate: filesToUpdate,
 		PRBranchName:  prBranchName,
 		baseBranch:    "main",
+		toMerge:       toMerge,
 	}, nil
 }
 
@@ -127,6 +130,11 @@ func (j *Job) FetchAllGoRepos(ctx context.Context, repoJob func(context.Context,
 			if err = j.finalizePR(ctx, err, result, repo); err != nil {
 				return err
 			}
+
+			//if j.counter >= 1 {
+			//	scopePrinter.Info("Limit of 1 PRs reached")
+			//	break
+			//}
 		}
 
 		if listRepos.NextPage == 0 {
@@ -237,6 +245,13 @@ func (j *Job) finalizePR(ctx context.Context, err error, result resultAction, re
 		printer.Info("Pull request created: %s", prResponse.GetHTMLURL())
 		j.prURLs = append(j.prURLs, prResponse.GetHTMLURL())
 		j.counter++
+
+		if j.toMerge {
+			_, _, err = client.PullRequests.Merge(ctx, j.User, repo.GetName(), prResponse.GetNumber(), "Merging PR", nil)
+			if err != nil {
+				return fmt.Errorf("error merging pull request: %v", err)
+			}
+		}
 	}
 
 	return err
@@ -290,7 +305,7 @@ func (j *Job) createBranchAndDo(ctx context.Context, repo, filePath string, cont
 		j.branchCreated = true
 	}
 
-	// Step 4: Perform the action
+	// Step 4: Update Workflow file
 	switch action {
 	case updateAction:
 		var updateResult resultAction
@@ -310,7 +325,42 @@ func (j *Job) createBranchAndDo(ctx context.Context, repo, filePath string, cont
 		printer.OK(r)
 	}
 
+	// if it is test.yml, add badge to README.md
+	//if file.GetName() == "test.yml" {
+	//	j.addBadge(ctx, repo, printer)
+	//}
+
 	return
+}
+
+func (j *Job) addBadge(ctx context.Context, repo string, printer pretty.ScopePrinter) {
+	const badgeTemplate = `[![Tests](https://github.com/kaatinga/luna/actions/workflows/test.yml/badge.svg?branch=%s)](https://github.com/kaatinga/luna/actions/workflows/test.yml)`
+	badge := fmt.Sprintf(badgeTemplate, j.baseBranch)
+	// Step 5: Read README.md
+	readmeFile, _, _, err := client.Repositories.GetContents(ctx, j.User, repo, "README.md", &github.RepositoryContentGetOptions{Ref: j.baseBranch})
+	if err != nil {
+		printer.Error("error getting README.md: %v", err)
+	}
+
+	// Step 6: Update README.md
+	var readmeContent string
+	readmeContent, err = readmeFile.GetContent()
+	if err != nil {
+		printer.Error("error getting README.md content: %v", err)
+	}
+
+	readmeContent = strings.Replace(readmeContent, badge+"\n", "", -1)
+
+	readmeContent = badge + "\n" + readmeContent
+
+	updateResult, err := j.updateFile(ctx, repo, "README.md", []byte(readmeContent), readmeFile, readmeContent)
+	if err != nil {
+		printer.Error("error updating README.md: %v", err)
+	}
+
+	if updateResult.Updated() {
+		printer.OK("Added badge to README.md")
+	}
 }
 
 func (j *Job) createBranch(ctx context.Context, repo string) error {
