@@ -334,8 +334,8 @@ func (j *Job) createBranchAndDo(ctx context.Context, repo, filePath string, cont
 }
 
 func (j *Job) addBadge(ctx context.Context, repo string, printer pretty.ScopePrinter) {
-	const badgeTemplate = `[![Tests](https://github.com/kaatinga/luna/actions/workflows/test.yml/badge.svg?branch=%s)](https://github.com/kaatinga/luna/actions/workflows/test.yml)`
-	badge := fmt.Sprintf(badgeTemplate, j.baseBranch)
+	const badgeTemplate = `[![Tests](https://github.com/%s/%s/actions/workflows/test.yml/badge.svg?branch=%s)](https://github.com/%[1]s/%[2]s/actions/workflows/test.yml)`
+	badge := fmt.Sprintf(badgeTemplate, j.User, "luna", j.baseBranch)
 	// Step 5: Read README.md
 	readmeFile, _, _, err := client.Repositories.GetContents(ctx, j.User, repo, "README.md", &github.RepositoryContentGetOptions{Ref: j.baseBranch})
 	if err != nil {
@@ -350,7 +350,7 @@ func (j *Job) addBadge(ctx context.Context, repo string, printer pretty.ScopePri
 	}
 
 	readmeContent = strings.Replace(readmeContent, badge+"\n", "", -1)
-
+	badge = fmt.Sprintf(badgeTemplate, j.User, repo, j.baseBranch)
 	readmeContent = badge + "\n" + readmeContent
 
 	updateResult, err := j.updateFile(ctx, repo, "README.md", []byte(readmeContent), readmeFile, readmeContent)
