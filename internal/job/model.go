@@ -30,11 +30,43 @@ type Job struct {
 	branchCreated bool
 	filesToUpdate map[string][]byte
 
+	prURLs []string
+
 	counter uint16
+}
+
+func (j *Job) skipRepo(ctx context.Context, repo *github.Repository, loopPrinter pretty.ScopePrinter) bool {
+	if repo.GetFork() {
+		loopPrinter.Info("Skipping forked repository '%s'", repo.GetName())
+		return true
+	}
+
+	if repo.GetArchived() {
+		loopPrinter.Info("Skipping archived repository '%s'", repo.GetName())
+		return true
+	}
+
+	// Check for go.mod file in the repository's root
+	_, _, resp, err := client.Repositories.GetContents(ctx, j.User, repo.GetName(), "go.mod", &github.RepositoryContentGetOptions{})
+	if err != nil {
+		if resp != nil && resp.StatusCode == 404 {
+			loopPrinter.Info("Repository is not a Golang package/project")
+		} else {
+			loopPrinter.Error("Error getting contents: %v", err)
+		}
+		return true
+	}
+
+	return false
+}
+
+func (j *Job) PRURLs() []string {
+	return j.prURLs
 }
 
 func (j *Job) next() {
 	j.branchCreated = false
+	j.baseBranch = "main"
 }
 
 func NewJob(user, prBranchName string) (*Job, error) {
@@ -79,7 +111,6 @@ func (j *Job) FetchAllGoRepos(ctx context.Context, repoJob func(context.Context,
 		ListOptions: github.ListOptions{PerPage: 30},
 	}
 
-	//MainLoop:
 	for {
 		repos, listRepos, err := client.Repositories.ListByUser(ctx, j.User, opt)
 		if err != nil {
@@ -90,22 +121,8 @@ func (j *Job) FetchAllGoRepos(ctx context.Context, repoJob func(context.Context,
 		for _, repo := range repos {
 			scopePrinter.Info("Processing repository '%s'", repo.GetName())
 			j.next() // Reset the branchCreated and other flags
-			loopPrinter := scopePrinter
-			loopPrinter.AddPrefix("-")
-			if repo.GetFork() {
-				loopPrinter.Info("Skipping forked repository '%s'", repo.GetName())
-				continue
-			}
-
-			// Check for go.mod file in the repository's root
-			var resp *github.Response
-			_, _, resp, err = client.Repositories.GetContents(ctx, j.User, repo.GetName(), "go.mod", &github.RepositoryContentGetOptions{})
-			if err != nil {
-				if resp != nil && resp.StatusCode == 404 {
-					loopPrinter.Info("Repository is not a Golang package/project")
-				} else {
-					loopPrinter.Error("Error getting contents: %v", err)
-				}
+			loopPrinter := pretty.NewScopePrinter("-")
+			if j.skipRepo(ctx, repo, loopPrinter) {
 				continue
 			}
 
@@ -115,11 +132,6 @@ func (j *Job) FetchAllGoRepos(ctx context.Context, repoJob func(context.Context,
 			if err = j.finalizePR(ctx, err, result, repo); err != nil {
 				return err
 			}
-
-			//if j.counter >= 3{
-			//	scopePrinter.Info("Limit of 3 Pull Requests reached. Stopping.")
-			//	break MainLoop
-			//}
 		}
 
 		if listRepos.NextPage == 0 {
@@ -199,7 +211,7 @@ func (j *Job) UpdateWorkflow(ctx context.Context, repo *github.Repository) (resu
 func (j *Job) finalizePR(ctx context.Context, err error, result resultAction, repo *github.Repository) error {
 	printer := pretty.NewScopePrinter("-")
 	switch {
-	case j.branchCreated && !result.Changed():
+	case err != nil || j.branchCreated && !result.Changed():
 		_, delErr := client.Git.DeleteRef(ctx, j.User, repo.GetName(), "refs/heads/"+j.PRBranchName)
 		if delErr != nil {
 			if err != nil {
@@ -226,6 +238,7 @@ func (j *Job) finalizePR(ctx context.Context, err error, result resultAction, re
 
 		// print the PR URL
 		printer.Info("Pull request created: %s", prResponse.GetHTMLURL())
+		j.prURLs = append(j.prURLs, prResponse.GetHTMLURL())
 		j.counter++
 	}
 
@@ -307,22 +320,7 @@ func (j *Job) createBranchAndDo(ctx context.Context, repo, filePath string, cont
 	}
 
 	if !j.branchCreated {
-		// Step 2: Get the latest commit SHA of the base branch
-		var baseRef *github.Reference
-		baseRef, _, err = client.Git.GetRef(ctx, j.User, repo, "refs/heads/"+j.baseBranch)
-		if err != nil {
-			err = fmt.Errorf("error getting base branch ref: %v", err)
-			return
-		}
-
-		// Step 3: Create a new branch from the latest commit of the base branch
-		newRef := &github.Reference{
-			Ref:    github.String("refs/heads/" + j.PRBranchName),
-			Object: &github.GitObject{SHA: baseRef.Object.SHA},
-		}
-		_, _, err = client.Git.CreateRef(ctx, j.User, repo, newRef)
-		if err != nil {
-			err = fmt.Errorf("error creating new branch: %v", err)
+		if err = j.createBranch(ctx, repo); err != nil {
 			return
 		}
 
@@ -349,6 +347,34 @@ func (j *Job) createBranchAndDo(ctx context.Context, repo, filePath string, cont
 	}
 
 	return
+}
+
+func (j *Job) createBranch(ctx context.Context, repo string) error {
+	// Step 2: Get the latest commit SHA of the base branch
+	baseRef, _, err := client.Git.GetRef(ctx, j.User, repo, "refs/heads/"+j.baseBranch)
+	if err != nil {
+		var errorResponse *github.ErrorResponse
+		if errors.As(err, &errorResponse) && errorResponse.Response.StatusCode == 404 && j.baseBranch != "master" {
+			j.baseBranch = "master"
+			baseRef, _, err = client.Git.GetRef(ctx, j.User, repo, "refs/heads/"+j.baseBranch)
+		}
+
+		if err != nil {
+			return fmt.Errorf("error getting base branch ref: %w", err)
+		}
+	}
+
+	// Step 3: Create a new branch from the latest commit of the base branch
+	newRef := &github.Reference{
+		Ref:    github.String("refs/heads/" + j.PRBranchName),
+		Object: &github.GitObject{SHA: baseRef.Object.SHA},
+	}
+	_, _, err = client.Git.CreateRef(ctx, j.User, repo, newRef)
+	if err != nil {
+		return fmt.Errorf("error creating new branch: %w", err)
+	}
+
+	return nil
 }
 
 func (j *Job) updateFile(ctx context.Context, repo string, filePath string, content []byte, file *github.RepositoryContent, oldContent string) (result resultAction, err error) {

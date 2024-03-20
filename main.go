@@ -32,8 +32,11 @@ func main() {
 	fmt.Println(color.Faint + "------- Finished -------" + color.Reset)
 	if err != nil {
 		printer.Error("%v", err)
-		os.Exit(1)
 	}
 
 	printer.OK("%d Pull Requests created in Go repositories", j.Counter())
+	printer.AddPrefix("--")
+	for _, pr := range j.PRURLs() {
+		printer.Info(pr)
+	}
 }
