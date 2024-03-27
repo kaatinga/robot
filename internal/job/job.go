@@ -38,6 +38,11 @@ func (j *Job) skipRepo(ctx context.Context, repo *github.Repository, loopPrinter
 		return true
 	}
 
+	if repo.GetOwner().GetType() != "User" {
+		loopPrinter.Skipped("Not a user repository")
+		return true
+	}
+
 	// Check for go.mod file in the repository's root
 	_, _, resp, err := client.Repositories.GetContents(ctx, j.User, repo.GetName(), "go.mod", &github.RepositoryContentGetOptions{})
 	if err != nil {
@@ -98,14 +103,13 @@ func (j *Job) FetchAllGoRepos(ctx context.Context, repoJob func(context.Context,
 	scopePrinter := pretty.NewScopePrinter("")
 	scopePrinter.Info("Fetching all Go repositories for user '%s'", j.User)
 	// List all repositories for the authenticated user
-	opt := &github.RepositoryListByUserOptions{
-		Type:        "owner",
+	opt := &github.RepositoryListByAuthenticatedUserOptions{
 		Sort:        "Updated",
 		ListOptions: github.ListOptions{PerPage: 30},
 	}
 
 	for {
-		repos, listRepos, err := client.Repositories.ListByUser(ctx, j.User, opt)
+		repos, listRepos, err := client.Repositories.ListByAuthenticatedUser(ctx, opt)
 		if err != nil {
 			return fmt.Errorf("Error listing repositories: %v\n", err)
 		}
