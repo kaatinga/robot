@@ -51,7 +51,7 @@ func (j *deleteOldRobotBranchesJob) DeleteLeftRobotBranches(ctx context.Context,
 				return err
 			}
 
-			printer.Info("Branch '%s' deleted", branch.GetName())
+			printer.OK("Branch '%s' deleted", branch.GetName())
 		}
 	}
 
