@@ -255,6 +255,11 @@ func (j *Job) finalizePR(ctx context.Context, err error, result resultAction, re
 			if err != nil {
 				return fmt.Errorf("error merging pull request: %v", err)
 			}
+
+			_, delErr := client.Git.DeleteRef(ctx, j.User, repo.GetName(), "refs/heads/"+j.PRBranchName)
+			if delErr != nil {
+				return fmt.Errorf("error deleting branch after pr was merged '%s': %w", j.PRBranchName, delErr)
+			}
 		}
 	}
 
