@@ -15,7 +15,7 @@ var toolSettings = &Options{}
 
 func Init() error {
 	// Load environment variables
-	if err := settings.LoadSettings(toolSettings); err != nil {
+	if err := settings.Load(toolSettings); err != nil {
 		return fmt.Errorf("failed to load settings: %w", err)
 	}
 
