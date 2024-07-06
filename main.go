@@ -2,11 +2,12 @@ package main
 
 import (
 	"context"
+	"log"
+	"os"
+
 	"github.com/kaatinga/robot/internal/job"
 	"github.com/kaatinga/robot/internal/pretty"
 	"github.com/kaatinga/robot/internal/tool"
-	"log"
-	"os"
 )
 
 func main() {
@@ -30,9 +31,9 @@ func main() {
 		os.Exit(1)
 	}
 
-	job2 := job.NewDeleteOldRobotBranchesJob(user)
-	if err := job.FetchAllGoRepos(context.Background(), job2, job2.DeleteLeftRobotBranches); err != nil {
-		printer.Error("%v", err)
-		os.Exit(1)
-	}
+	// job2 := job.NewDeleteOldRobotBranchesJob(user)
+	// if err := job.FetchAllGoRepos(context.Background(), job2, job2.DeleteLeftRobotBranches); err != nil {
+	// 	printer.Error("%v", err)
+	// 	os.Exit(1)
+	// }
 }

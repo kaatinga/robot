@@ -5,8 +5,7 @@ go 1.21
 require (
 	github.com/google/go-github/v60 v60.0.0
 	github.com/kaatinga/settings v1.5.1
-	golang.org/x/oauth2 v0.19.0
-	golang.org/x/sync v0.7.0
+	golang.org/x/oauth2 v0.21.0
 )
 
 require (
