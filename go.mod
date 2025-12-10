@@ -5,7 +5,7 @@ go 1.25
 require (
 	github.com/google/go-github/v60 v60.0.0
 	github.com/kaatinga/settings v1.7.1
-	golang.org/x/oauth2 v0.33.0
+	golang.org/x/oauth2 v0.34.0
 )
 
 require (
